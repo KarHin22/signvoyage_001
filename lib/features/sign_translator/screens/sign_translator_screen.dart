@@ -1,9 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:camera/camera.dart';
-import '../../../../../providers/sign_recognition_provider.dart';  // Adjust path
 import '../providers/sign_recognition_provider.dart';
-
 class SignTranslatorScreen extends ConsumerWidget {
   const SignTranslatorScreen({super.key});
 
@@ -17,7 +15,7 @@ class SignTranslatorScreen extends ConsumerWidget {
         actions: [
           IconButton(
             icon: const Icon(Icons.flip_camera_ios),
-            onPressed: state.isInitialized ? () => ref.read(signRecognitionProvider.notifier!).toggleCamera() : null,
+            onPressed: state.isInitialized ? () => ref.read(signRecognitionProvider.notifier).toggleCamera() : null,
           ),
         ],
       ),
@@ -25,7 +23,8 @@ class SignTranslatorScreen extends ConsumerWidget {
           ? Stack(
               fit: StackFit.expand,
               children: [
-                CameraPreview(ref.read(signRecognitionProvider.notifier!)._cameraController!), // Access private? Use expose.
+                if (ref.read(signRecognitionProvider.notifier).cameraController != null)
+                  CameraPreview(ref.read(signRecognitionProvider.notifier).cameraController!),
                 // Subtitle overlay
                 if (state.gestureText.isNotEmpty)
                   Positioned(
@@ -64,7 +63,7 @@ class SignTranslatorScreen extends ConsumerWidget {
             children: [
               IconButton(
                 icon: const Icon(Icons.volume_up),
-                onPressed: state.gestureText.isNotEmpty ? () => ref.read(signRecognitionProvider.notifier!).speakGesture() : null,
+                onPressed: state.gestureText.isNotEmpty ? () => ref.read(signRecognitionProvider.notifier).speakGesture() : null,
                 tooltip: 'Speak',
               ),
             ],
