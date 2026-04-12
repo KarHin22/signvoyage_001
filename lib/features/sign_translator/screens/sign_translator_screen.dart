@@ -1,26 +1,74 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:camera/camera.dart';
+import '../../../../../providers/sign_recognition_provider.dart';  // Adjust path
+import '../providers/sign_recognition_provider.dart';
 
-class SignTranslatorScreen extends StatelessWidget {
+class SignTranslatorScreen extends ConsumerWidget {
   const SignTranslatorScreen({super.key});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final state = ref.watch(signRecognitionProvider);
+
     return Scaffold(
-      appBar: AppBar(title: const Text('Live Translator')),
-      body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.camera_alt, size: 80,
-                color: Theme.of(context).colorScheme.outline),
-            const SizedBox(height: 16),
-            Text('Sign-to-Text Vision',
-                style: Theme.of(context).textTheme.headlineSmall),
-            const SizedBox(height: 8),
-            Text('Student 1 - Replace this placeholder',
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: Theme.of(context).colorScheme.outline)),
-          ],
+      appBar: AppBar(
+        title: const Text('Live Translator'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.flip_camera_ios),
+            onPressed: state.isInitialized ? () => ref.read(signRecognitionProvider.notifier!).toggleCamera() : null,
+          ),
+        ],
+      ),
+      body: state.isInitialized
+          ? Stack(
+              fit: StackFit.expand,
+              children: [
+                CameraPreview(ref.read(signRecognitionProvider.notifier!)._cameraController!), // Access private? Use expose.
+                // Subtitle overlay
+                if (state.gestureText.isNotEmpty)
+                  Positioned(
+                    bottom: 100,
+                    left: 20,
+                    right: 20,
+                    child: AnimatedOpacity(
+                      opacity: 1.0,
+                      duration: const Duration(seconds: 3),
+                      child: Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: Colors.black54,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          state.gestureText,
+                          style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                            color: Colors.white,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            )
+          : const Center(
+              child: CircularProgressIndicator(),
+            ),
+      bottomNavigationBar: BottomAppBar(
+        child: Padding(
+          padding: const EdgeInsets.all(8),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            children: [
+              IconButton(
+                icon: const Icon(Icons.volume_up),
+                onPressed: state.gestureText.isNotEmpty ? () => ref.read(signRecognitionProvider.notifier!).speakGesture() : null,
+                tooltip: 'Speak',
+              ),
+            ],
+          ),
         ),
       ),
     );
