@@ -14,22 +14,18 @@ class EmergencyScreen extends StatefulWidget {
 }
 
 class _EmergencyScreenState extends State<EmergencyScreen> {
-
   bool _isMalay = false;
-
 
   String _streetName = "Locating...";
   String _cityCountry = "Please wait";
   String _latLong = "";
   bool _isLoadingGPS = false;
 
-
   bool _isSOSActive = false;
   String _sosStatus = "";
 
-
-  String _emergencyContactName = "Keluarga / Family";
-  String _emergencyContactNumber = "01128283725";
+  
+  static List<Map<String, String>> _emergencyContacts = [];
 
   @override
   void initState() {
@@ -98,18 +94,30 @@ class _EmergencyScreenState extends State<EmergencyScreen> {
 
     await Future.delayed(const Duration(seconds: 1));
     if (!mounted) return;
-    setState(() => _sosStatus = _isMalay
-        ? "Menghantar SMS ke $_emergencyContactName..."
-        : "Sending SMS to $_emergencyContactName...");
 
-    _sendEmergencySMS(_emergencyContactNumber);
+    
+    String contactNames = _emergencyContacts.isNotEmpty
+        ? _emergencyContacts.map((c) => c["name"]).join(", ")
+        : (_isMalay ? "Kenalan" : "Contacts");
+
+    setState(() => _sosStatus = _isMalay
+        ? "Menghantar SMS ke $contactNames..."
+        : "Sending SMS to $contactNames...");
+
+    _sendEmergencySMS();
   }
 
-  void _sendEmergencySMS(String phone) async {
+  void _sendEmergencySMS() async {
+    if (_emergencyContacts.isEmpty) return; 
+
     final String msg = _isMalay
         ? "KECEMASAN! Saya perlukan bantuan di: $_streetName ($_latLong)"
         : "EMERGENCY! I need help at: $_streetName ($_latLong)";
-    final Uri uri = Uri.parse("sms:$phone?body=${Uri.encodeComponent(msg)}");
+
+    
+    String phoneNumbers = _emergencyContacts.map((c) => c["phone"]).join(',');
+
+    final Uri uri = Uri.parse("sms:$phoneNumbers?body=${Uri.encodeComponent(msg)}");
     if (await canLaunchUrl(uri)) {
       await launchUrl(uri);
     }
@@ -128,59 +136,207 @@ class _EmergencyScreenState extends State<EmergencyScreen> {
 
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text(_isMalay ? "Tetapan Kenalan" : "Emergency Contact Setup", style: const TextStyle(fontWeight: FontWeight.bold)),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: nameCtrl,
-              decoration: InputDecoration(
-                labelText: _isMalay ? "Nama (cth: Ibu)" : "Name (e.g. Mom)",
-                hintText: _emergencyContactName,
-                prefixIcon: const Icon(Icons.person),
-              ),
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: phoneCtrl,
-              keyboardType: TextInputType.phone,
-              decoration: InputDecoration(
-                labelText: _isMalay ? "Nombor Telefon" : "Phone Number",
-                hintText: _emergencyContactNumber,
-                prefixIcon: const Icon(Icons.phone),
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text(_isMalay ? "Batal" : "Cancel"),
-          ),
-          FilledButton(
-            onPressed: () {
-              setState(() {
-                if (nameCtrl.text.trim().isNotEmpty) {
-                  _emergencyContactName = nameCtrl.text.trim();
-                }
-                if (phoneCtrl.text.trim().isNotEmpty) {
-                  _emergencyContactNumber = phoneCtrl.text.trim();
-                }
-              });
-              Navigator.pop(context);
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text(_isMalay
-                      ? "Disimpan: $_emergencyContactName"
-                      : "Saved: $_emergencyContactName"),
-                  backgroundColor: Colors.green,
+      barrierDismissible: false,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          final colorScheme = Theme.of(context).colorScheme;
+
+          return AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)), 
+            title: Row(
+              children: [
+                Icon(Icons.contact_phone_rounded, color: colorScheme.primary),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                      _isMalay ? "Tetapan Kenalan" : "Emergency Contacts",
+                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 20)
+                  ),
                 ),
-              );
-            },
-            child: Text(_isMalay ? "Simpan" : "Save"),
-          ),
-        ],
+              ],
+            ),
+            contentPadding: const EdgeInsets.fromLTRB(24, 16, 24, 0),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  
+                  if (_emergencyContacts.isEmpty)
+                  
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 24.0),
+                      child: Column(
+                        children: [
+                          Icon(Icons.person_add_disabled_rounded, size: 64, color: colorScheme.outlineVariant.withOpacity(0.5)),
+                          const SizedBox(height: 16),
+                          Text(
+                            _isMalay ? "Belum ada kenalan" : "No contacts added yet",
+                            style: TextStyle(color: colorScheme.onSurfaceVariant, fontWeight: FontWeight.bold, fontSize: 16),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            _isMalay ? "Sila tambah sekurang-kurangnya satu." : "Please add at least one contact.",
+                            style: TextStyle(color: colorScheme.outline, fontSize: 13),
+                          ),
+                        ],
+                      ),
+                    )
+                  else
+                  
+                    ..._emergencyContacts.asMap().entries.map((entry) {
+                      int index = entry.key;
+                      Map<String, String> contact = entry.value;
+                      
+                      String initial = contact["name"]!.isNotEmpty ? contact["name"]!.substring(0, 1).toUpperCase() : "?";
+
+                      return Container(
+                        margin: const EdgeInsets.only(bottom: 12),
+                        decoration: BoxDecoration(
+                          color: colorScheme.surfaceContainerHighest.withOpacity(0.3),
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(color: colorScheme.outlineVariant.withOpacity(0.5)),
+                        ),
+                        child: ListTile(
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                          leading: CircleAvatar(
+                            backgroundColor: colorScheme.primaryContainer,
+                            foregroundColor: colorScheme.onPrimaryContainer,
+                            child: Text(initial, style: const TextStyle(fontWeight: FontWeight.bold)),
+                          ),
+                          title: Text(contact["name"] ?? "", style: const TextStyle(fontWeight: FontWeight.bold)),
+                          subtitle: Text(contact["phone"] ?? ""),
+                          trailing: IconButton(
+                            icon: Icon(Icons.remove_circle_outline, color: colorScheme.error),
+                            onPressed: () {
+                              setDialogState(() {
+                                _emergencyContacts.removeAt(index);
+                              });
+                            },
+                          ),
+                        ),
+                      );
+                    }).toList(),
+
+                  const SizedBox(height: 8),
+
+                  
+                  Row(
+                    children: [
+                      Expanded(child: Divider(color: colorScheme.outlineVariant.withOpacity(0.5))),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 12.0),
+                        child: Text(
+                          "${_emergencyContacts.length} / 3",
+                          style: TextStyle(color: colorScheme.primary, fontSize: 13, fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                      Expanded(child: Divider(color: colorScheme.outlineVariant.withOpacity(0.5))),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+
+                  
+                  if (_emergencyContacts.length < 3) ...[
+                    TextField(
+                      controller: nameCtrl,
+                      textInputAction: TextInputAction.next,
+                      decoration: InputDecoration(
+                        labelText: _isMalay ? "Nama" : "Name",
+                        hintText: _isMalay ? "cth: Ibu / Ayah" : "e.g. Mom / Dad",
+                        prefixIcon: const Icon(Icons.person_outline),
+                        filled: true,
+                        fillColor: colorScheme.surfaceContainerHighest.withOpacity(0.3),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(16),
+                          borderSide: BorderSide.none,
+                        ),
+                        isDense: true,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: phoneCtrl,
+                      keyboardType: TextInputType.phone,
+                      decoration: InputDecoration(
+                        labelText: _isMalay ? "Nombor Telefon" : "Phone Number",
+                        prefixIcon: const Icon(Icons.phone_outlined),
+                        filled: true,
+                        fillColor: colorScheme.surfaceContainerHighest.withOpacity(0.3),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(16),
+                          borderSide: BorderSide.none,
+                        ),
+                        isDense: true,
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    SizedBox(
+                      width: double.infinity,
+                      height: 50,
+                      child: ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: colorScheme.primaryContainer,
+                          foregroundColor: colorScheme.onPrimaryContainer,
+                          elevation: 0,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                        ),
+                        onPressed: () {
+                          if (nameCtrl.text.trim().isNotEmpty && phoneCtrl.text.trim().isNotEmpty) {
+                            setDialogState(() {
+                              _emergencyContacts.add({
+                                "name": nameCtrl.text.trim(),
+                                "phone": phoneCtrl.text.trim(),
+                              });
+                              nameCtrl.clear();
+                              phoneCtrl.clear();
+                            });
+                          }
+                        },
+                        icon: const Icon(Icons.add_circle_outline),
+                        label: Text(_isMalay ? "Tambah Kenalan" : "Add Contact", style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                      ),
+                    )
+                  ] else ...[
+                    
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: colorScheme.tertiaryContainer.withOpacity(0.6),
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(Icons.info_outline, color: colorScheme.onTertiaryContainer),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Text(
+                              _isMalay ? "Anda telah mencapai had maksimum 3 kenalan." : "You have reached the maximum limit of 3 contacts.",
+                              style: TextStyle(color: colorScheme.onTertiaryContainer, fontSize: 14, height: 1.3),
+                            ),
+                          ),
+                        ],
+                      ),
+                    )
+                  ],
+                ],
+              ),
+            ),
+            actionsPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            actions: [
+              FilledButton(
+                style: FilledButton.styleFrom(
+                    minimumSize: const Size(100, 45),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))
+                ),
+                onPressed: () {
+                  setState(() {}); 
+                  Navigator.pop(context);
+                },
+                child: Text(_isMalay ? "Selesai" : "Done", style: const TextStyle(fontWeight: FontWeight.bold)),
+              ),
+            ],
+          );
+        },
       ),
     );
   }
@@ -210,7 +366,7 @@ class _EmergencyScreenState extends State<EmergencyScreen> {
               Text(
                 _isMalay
                     ? "Tolong berkomunikasi dengan saya melalui teks, isyarat tangan, atau menaip di telefon anda."
-                    : "Please communicate with me using text, simple gestures, or by typing on your phone.",
+                    : "Please communicate dengan me using text, simple gestures, or by typing on your phone.",
                 textAlign: TextAlign.center,
                 style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w500),
               ),
@@ -415,7 +571,6 @@ class _EmergencyScreenState extends State<EmergencyScreen> {
     );
   }
 
-  
   Widget _buildLocationCard(BuildContext context, ColorScheme colorScheme) {
     return GestureDetector(
       onTap: () async {
@@ -429,7 +584,6 @@ class _EmergencyScreenState extends State<EmergencyScreen> {
         height: 140,
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(28),
-          
           gradient: LinearGradient(
             colors: [
               colorScheme.primaryContainer,
@@ -476,7 +630,6 @@ class _EmergencyScreenState extends State<EmergencyScreen> {
                   ],
                 ),
               ),
-              
               Icon(Icons.refresh, color: colorScheme.primary.withOpacity(0.2), size: 20),
             ],
           ),
