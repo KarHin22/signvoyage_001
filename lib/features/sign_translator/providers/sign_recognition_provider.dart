@@ -53,6 +53,8 @@ class SignRecognitionNotifier extends AutoDisposeNotifier<SignRecognitionState> 
 
   bool _disposed = false;
 
+  static const double CONFIDENCE_THRESHOLD = 0.7;
+
   final PoseDetector _poseDetector = PoseDetector(
     options: PoseDetectorOptions(
       model: PoseDetectionModel.base, // Real-time
@@ -83,6 +85,9 @@ class SignRecognitionNotifier extends AutoDisposeNotifier<SignRecognitionState> 
       await _tts!.setLanguage('en-US');
       await _tts!.setSpeechRate(0.8);
       await _tts!.setVolume(1.0);
+      _tts!.setStartHandler(() => debugPrint('TTS Started'));
+      _tts!.setErrorHandler((msg) => debugPrint('TTS Error: $msg'));
+      _tts!.setCompletionHandler(() => debugPrint('TTS complete'));
 
       if (kIsWeb) {
         state = state.copyWith(isInitialized: true, error: 'Camera not supported on web');
@@ -137,14 +142,15 @@ class SignRecognitionNotifier extends AutoDisposeNotifier<SignRecognitionState> 
       await Future.delayed(const Duration(seconds: 2));
       if (_disposed) return;
 
-      final random = math.Random().nextInt(10);
-      RecognizedGesture mockGesture = RecognizedGesture.none;
-      if (random == 0) { mockGesture = RecognizedGesture.thumbsUp; }
-      else if (random == 1) { mockGesture = RecognizedGesture.yeah; }
-      else if (random == 2) { mockGesture = RecognizedGesture.ok; }
-      else if (random == 3) { mockGesture = RecognizedGesture.peace; }
+      final mockGestures = [
+        RecognizedGesture.thumbsUp,
+        RecognizedGesture.yeah,
+        RecognizedGesture.ok,
+        RecognizedGesture.peace
+      ];
+      final mockGesture = mockGestures[math.Random().nextInt(mockGestures.length)];
 
-      if (mockGesture != RecognizedGesture.none && mockGesture != state.gesture) {
+      if (mockGesture != state.gesture) {
         _setGesture(mockGesture);
       }
       _isDetecting = false;
@@ -174,6 +180,7 @@ class SignRecognitionNotifier extends AutoDisposeNotifier<SignRecognitionState> 
       gesture: gesture,
       gestureText: gesture.englishText,
     );
+    debugPrint('👐 Detected gesture: ${gesture.englishText}');
     speakGesture();
 
     _subtitleTimer?.cancel();
@@ -232,17 +239,54 @@ class SignRecognitionNotifier extends AutoDisposeNotifier<SignRecognitionState> 
 
   RecognizedGesture _classifyGesture(Pose pose) {
     final landmarks = pose.landmarks;
-    final rightThumb = landmarks[PoseLandmarkType.rightThumb];
-    final rightIndex = landmarks[PoseLandmarkType.rightIndex];
-    final rightWrist = landmarks[PoseLandmarkType.rightWrist];
+    final rw = landmarks[PoseLandmarkType.rightWrist];
+    final rt = landmarks[PoseLandmarkType.rightThumb];
+    final ri = landmarks[PoseLandmarkType.rightIndex];
+    final rp = landmarks[PoseLandmarkType.rightPinky];
 
-    if (rightThumb != null && rightIndex != null && rightWrist != null) {
-      if (rightIndex.y < rightWrist.y && rightThumb.y < rightWrist.y) {
-        // Thumbs up approximation
-        return RecognizedGesture.thumbsUp;
-      }
+    if (rw == null || rt == null || ri == null || rp == null) {
+      return RecognizedGesture.none;
     }
-    // Add more classifications based on landmarks...
+
+    if (rw.likelihood < CONFIDENCE_THRESHOLD || 
+        rt.likelihood < CONFIDENCE_THRESHOLD || 
+        ri.likelihood < CONFIDENCE_THRESHOLD || 
+        rp.likelihood < CONFIDENCE_THRESHOLD) {
+      return RecognizedGesture.none;
+    }
+
+    final wristY = rw.y;
+    final thumbY = rt.y;
+    final indexY = ri.y;
+    final pinkyY = rp.y;
+
+    // Thumbs Up: thumb above wrist, index near wrist
+    if (thumbY < wristY * 0.92 && 
+        indexY > wristY * 0.97 && 
+        (rt.x - rw.x).abs() < 0.1) {
+      return RecognizedGesture.thumbsUp;
+    }
+
+    // Peace: index up, pinky down, spread
+    if (indexY < wristY * 0.85 && 
+        pinkyY > wristY * 0.92 && 
+        (ri.x - rp.x).abs() > 0.15) {
+      return RecognizedGesture.peace;
+    }
+
+    // OK: thumb-index close
+    if ((rt.x - ri.x).abs() < 0.15 && (rt.y - ri.y).abs() < 0.15 && 
+        indexY > wristY * 0.95) {
+      return RecognizedGesture.ok;
+    }
+
+    // Yeah: thumb up, fingers down close
+    if (thumbY < wristY * 0.90 && 
+        indexY > wristY * 0.95 && pinkyY > wristY * 0.95 &&
+        (ri.x - rp.x).abs() < 0.12) {
+      return RecognizedGesture.yeah;
+    }
+
     return RecognizedGesture.none;
   }
 
@@ -266,4 +310,3 @@ class SignRecognitionNotifier extends AutoDisposeNotifier<SignRecognitionState> 
 final signRecognitionProvider = AutoDisposeNotifierProvider<SignRecognitionNotifier, SignRecognitionState>(
   SignRecognitionNotifier.new,
 );
-
