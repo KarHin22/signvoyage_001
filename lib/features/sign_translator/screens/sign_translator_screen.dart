@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:camera/camera.dart';
 import '../providers/sign_recognition_provider.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 class SignTranslatorScreen extends ConsumerWidget {
   const SignTranslatorScreen({super.key});
 
@@ -19,12 +20,35 @@ class SignTranslatorScreen extends ConsumerWidget {
           ),
         ],
       ),
-      body: state.isInitialized
-          ? Stack(
+  body: (state.error != null || kIsWeb || !state.isInitialized)
+          ? Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  if (kIsWeb)
+                    const Icon(Icons.web, size: 64, color: Colors.grey)
+                  else if (state.error != null)
+Icon(Icons.error, size: 64, color: Colors.red),
+                  const SizedBox(height: 16),
+                  Text(
+                    kIsWeb ? 'Camera not supported on web. Use mobile.' : state.error ?? 'Initializing...',
+                    style: Theme.of(context).textTheme.titleMedium,
+                    textAlign: TextAlign.center,
+                  ),
+                  if (!kIsWeb && state.error != null) ...[
+                    const SizedBox(height: 16),
+                    ElevatedButton(
+                      onPressed: () => ref.invalidate(signRecognitionProvider),
+                      child: const Text('Retry'),
+                    ),
+                  ],
+                ],
+              ),
+            )
+          : Stack(
               fit: StackFit.expand,
               children: [
-                if (ref.read(signRecognitionProvider.notifier).cameraController != null)
-                  CameraPreview(ref.read(signRecognitionProvider.notifier).cameraController!),
+                CameraPreview(ref.read(signRecognitionProvider.notifier).cameraController!),
                 // Subtitle overlay
                 if (state.gestureText.isNotEmpty)
                   Positioned(
@@ -51,9 +75,6 @@ class SignTranslatorScreen extends ConsumerWidget {
                     ),
                   ),
               ],
-            )
-          : const Center(
-              child: CircularProgressIndicator(),
             ),
       bottomNavigationBar: BottomAppBar(
         child: Padding(

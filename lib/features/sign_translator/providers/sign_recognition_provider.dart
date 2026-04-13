@@ -7,15 +7,17 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:google_mlkit_pose_detection/google_mlkit_pose_detection.dart';
+import 'package:permission_handler/permission_handler.dart';
 import '../models/gesture.dart';
 
 class SignRecognitionState {
   const SignRecognitionState({
     this.gesture = RecognizedGesture.none,
     this.gestureText = '',
-    this.cameraIndex = 1, // Default front
+    this.cameraIndex = 0, // Default rear
     this.isInitialized = false,
     this.cameras = const [],
+    this.error,
   });
 
   final RecognizedGesture gesture;
@@ -23,6 +25,7 @@ class SignRecognitionState {
   final int cameraIndex;
   final bool isInitialized;
   final List<CameraDescription> cameras;
+  final String? error;
 
   SignRecognitionState copyWith({
     RecognizedGesture? gesture,
@@ -30,6 +33,7 @@ class SignRecognitionState {
     int? cameraIndex,
     bool? isInitialized,
     List<CameraDescription>? cameras,
+    String? error,
   }) {
     return SignRecognitionState(
       gesture: gesture ?? this.gesture,
@@ -37,6 +41,7 @@ class SignRecognitionState {
       cameraIndex: cameraIndex ?? this.cameraIndex,
       isInitialized: isInitialized ?? this.isInitialized,
       cameras: cameras ?? this.cameras,
+      error: error ?? this.error,
     );
   }
 }
@@ -79,6 +84,17 @@ class SignRecognitionNotifier extends AutoDisposeNotifier<SignRecognitionState> 
       await _tts!.setSpeechRate(0.8);
       await _tts!.setVolume(1.0);
 
+      if (kIsWeb) {
+        state = state.copyWith(isInitialized: true, error: 'Camera not supported on web');
+        return;
+      }
+
+      final status = await Permission.camera.request();
+      if (!status.isGranted) {
+        state = state.copyWith(error: 'Camera permission denied');
+        return;
+      }
+
       final cameras = await availableCameras();
       _cameras.addAll(cameras);
 
@@ -87,24 +103,30 @@ class SignRecognitionNotifier extends AutoDisposeNotifier<SignRecognitionState> 
         initialIndex = 0;
       }
       
-      state = state.copyWith(cameras: _cameras, cameraIndex: initialIndex);
+      state = state.copyWith(cameras: _cameras, cameraIndex: initialIndex, error: null);
       
       if (_cameras.isNotEmpty) {
         await _initCamera(state.cameraIndex);
       }
     } catch (e) {
       debugPrint('Init error: $e');
+      state = state.copyWith(error: 'Failed to initialize camera: $e');
     }
   }
 
   Future<void> _initCamera(int cameraIndex) async {
-    final camera = _cameras[cameraIndex];
-    _cameraController = CameraController(camera, ResolutionPreset.medium);
+    try {
+      final camera = _cameras[cameraIndex];
+      _cameraController = CameraController(camera, ResolutionPreset.medium);
 
-    await _cameraController!.initialize();
-    await _cameraController!.startImageStream(_processImage);
+      await _cameraController!.initialize();
+      await _cameraController!.startImageStream(_processImage);
 
-    state = state.copyWith(isInitialized: true);
+      state = state.copyWith(isInitialized: true, error: null);
+    } catch (e) {
+      debugPrint('Camera init error: $e');
+      state = state.copyWith(isInitialized: false, error: 'Camera init failed: $e');
+    }
   }
 
   void _processImage(CameraImage image) async {
@@ -244,3 +266,4 @@ class SignRecognitionNotifier extends AutoDisposeNotifier<SignRecognitionState> 
 final signRecognitionProvider = AutoDisposeNotifierProvider<SignRecognitionNotifier, SignRecognitionState>(
   SignRecognitionNotifier.new,
 );
+
