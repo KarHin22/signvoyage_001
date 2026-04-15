@@ -45,11 +45,32 @@ Icon(Icons.error, size: 64, color: Colors.red),
                 ],
               ),
             )
-          : Stack(
-              fit: StackFit.expand,
-              children: [
-                CameraPreview(ref.read(signRecognitionProvider.notifier).cameraController!),
-                // Subtitle overlay
+          : (state.isEmulator && state.cameras.isNotEmpty && state.cameras[state.cameraIndex].lensDirection == CameraLensDirection.front)
+              ? Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16.0),
+                    child: Text(
+                      'Only available in actual mobile device',
+                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                            color: Colors.orange,
+                            fontWeight: FontWeight.bold,
+                          ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                )
+              : Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    CameraPreview(ref.read(signRecognitionProvider.notifier).cameraController!),
+                    if (state.handBoundingBox != null && state.imageSize != Size.zero)
+                      CustomPaint(
+                        painter: HandBoundingBoxPainter(
+                          box: state.handBoundingBox!,
+                          imageSize: state.imageSize,
+                        ),
+                      ),
+                    // Subtitle overlay
                 if (state.gestureText.isNotEmpty)
                   Positioned(
                     bottom: 100,
@@ -92,5 +113,67 @@ Icon(Icons.error, size: 64, color: Colors.red),
         ),
       ),
     );
+  }
+}
+
+class HandBoundingBoxPainter extends CustomPainter {
+  /// [box] uses **normalized** coordinates (0.0–1.0) from MediaPipe.
+  final Rect box;
+  /// [imageSize] is kept for API compatibility but not used for scaling
+  /// since MediaPipe returns normalized coords.
+  final Size imageSize;
+
+  HandBoundingBoxPainter({required this.box, required this.imageSize});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    // MediaPipe landmarks are normalized (0.0–1.0), so we scale to screen size.
+    final mappedBox = Rect.fromLTRB(
+      box.left   * size.width,
+      box.top    * size.height,
+      box.right  * size.width,
+      box.bottom * size.height,
+    );
+
+    final borderPaint = Paint()
+      ..color = const Color(0xFF00E5FF) // Cyan glow
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 3.0;
+
+    final glowPaint = Paint()
+      ..color = const Color(0x3300E5FF) // Translucent fill
+      ..style = PaintingStyle.fill;
+
+    canvas.drawRect(mappedBox, glowPaint);
+    canvas.drawRect(mappedBox, borderPaint);
+
+    // Corner accent marks for a more polished HUD look
+    const double cornerLen = 18.0;
+    const double cw = 3.5;
+    final accentPaint = Paint()
+      ..color = Colors.white
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = cw
+      ..strokeCap = StrokeCap.round;
+
+    void drawCorner(Offset tl, Offset tr, Offset bl) {
+      canvas.drawLine(tl, tr, accentPaint);
+      canvas.drawLine(tl, bl, accentPaint);
+    }
+
+    final l = mappedBox.left;
+    final t = mappedBox.top;
+    final r = mappedBox.right;
+    final b = mappedBox.bottom;
+
+    drawCorner(Offset(l, t), Offset(l + cornerLen, t), Offset(l, t + cornerLen));
+    drawCorner(Offset(r, t), Offset(r - cornerLen, t), Offset(r, t + cornerLen));
+    drawCorner(Offset(l, b), Offset(l + cornerLen, b), Offset(l, b - cornerLen));
+    drawCorner(Offset(r, b), Offset(r - cornerLen, b), Offset(r, b - cornerLen));
+  }
+
+  @override
+  bool shouldRepaint(covariant HandBoundingBoxPainter oldDelegate) {
+    return oldDelegate.box != box || oldDelegate.imageSize != imageSize;
   }
 }
