@@ -1,26 +1,709 @@
 import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:geocoding/geocoding.dart';
+import 'package:vibration/vibration.dart';
+import 'package:url_launcher/url_launcher.dart';
+import '../services/location_service.dart';
+import '../services/notification_service.dart';
 
-class EmergencyScreen extends StatelessWidget {
+class EmergencyScreen extends StatefulWidget {
   const EmergencyScreen({super.key});
 
   @override
+  State<EmergencyScreen> createState() => _EmergencyScreenState();
+}
+
+class _EmergencyScreenState extends State<EmergencyScreen> {
+  bool _isMalay = false;
+
+  String _streetName = "Locating...";
+  String _cityCountry = "Please wait";
+  String _latLong = "";
+  bool _isLoadingGPS = false;
+
+  bool _isSOSActive = false;
+  String _sosStatus = "";
+
+  
+  static List<Map<String, String>> _emergencyContacts = [];
+
+  @override
+  void initState() {
+    super.initState();
+    NotificationService.initialize();
+    _autoFetchLocation();
+  }
+
+  Future<void> _autoFetchLocation() async {
+    setState(() => _isLoadingGPS = true);
+
+    try {
+      Position? pos = await LocationService.getCurrentLocation();
+      if (pos != null) {
+        List<Placemark> placemarks = await placemarkFromCoordinates(pos.latitude, pos.longitude);
+        if (placemarks.isNotEmpty) {
+          Placemark place = placemarks[0];
+          setState(() {
+            String road = place.thoroughfare ?? "";
+            String taman = place.subLocality ?? "";
+            if (road.isNotEmpty && taman.isNotEmpty) {
+              _streetName = "$road, $taman";
+            } else {
+              _streetName = road.isNotEmpty ? road : (taman.isNotEmpty ? taman : "Location Found");
+            }
+            _cityCountry = "${place.locality ?? ''}, ${place.country ?? ''}";
+            _latLong = "${pos.latitude.toStringAsFixed(4)}° N, ${pos.longitude.toStringAsFixed(4)}° E";
+          });
+        }
+      }
+    } catch (e) {
+      print("Auto Location Error: $e");
+      setState(() {
+        _streetName = "Location Access Required";
+        _cityCountry = "Please enable GPS";
+      });
+    } finally {
+      if (mounted) {
+        setState(() => _isLoadingGPS = false);
+      }
+    }
+  }
+
+  Future<void> _triggerSOS() async {
+    setState(() {
+      _isSOSActive = true;
+      _sosStatus = _isMalay ? "Memulakan amaran..." : "Initializing alerts...";
+    });
+
+    if (await Vibration.hasVibrator() ?? false) {
+      Vibration.vibrate(pattern: [500, 500, 500, 500], repeat: 0);
+    }
+
+    NotificationService.showSOSNotification(_isMalay);
+
+    String currentCity = _cityCountry.split(',').first.trim();
+    if (currentCity.isEmpty || currentCity == "Please wait") {
+      currentCity = _isMalay ? "Berdekatan" : "Local";
+    }
+
+    await Future.delayed(const Duration(seconds: 1));
+    if (!mounted) return;
+    setState(() => _sosStatus = _isMalay
+        ? "Menghantar ke Hospital $currentCity..."
+        : "Sending to $currentCity Hospital...");
+
+    await Future.delayed(const Duration(seconds: 1));
+    if (!mounted) return;
+
+    
+    String contactNames = _emergencyContacts.isNotEmpty
+        ? _emergencyContacts.map((c) => c["name"]).join(", ")
+        : (_isMalay ? "Kenalan" : "Contacts");
+
+    setState(() => _sosStatus = _isMalay
+        ? "Menghantar SMS ke $contactNames..."
+        : "Sending SMS to $contactNames...");
+
+    _sendEmergencySMS();
+  }
+
+  void _sendEmergencySMS() async {
+    if (_emergencyContacts.isEmpty) return; 
+
+    final String msg = _isMalay
+        ? "KECEMASAN! Saya perlukan bantuan di: $_streetName ($_latLong)"
+        : "EMERGENCY! I need help at: $_streetName ($_latLong)";
+
+    
+    String phoneNumbers = _emergencyContacts.map((c) => c["phone"]).join(',');
+
+    final Uri uri = Uri.parse("sms:$phoneNumbers?body=${Uri.encodeComponent(msg)}");
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri);
+    }
+  }
+
+  void _stopSOS() {
+    Vibration.cancel();
+    setState(() {
+      _isSOSActive = false;
+    });
+  }
+
+  void _showSettingsDialog() {
+    TextEditingController nameCtrl = TextEditingController();
+    TextEditingController phoneCtrl = TextEditingController();
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          final colorScheme = Theme.of(context).colorScheme;
+
+          return AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)), 
+            title: Row(
+              children: [
+                Icon(Icons.contact_phone_rounded, color: colorScheme.primary),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                      _isMalay ? "Tetapan Kenalan" : "Emergency Contacts",
+                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 20)
+                  ),
+                ),
+              ],
+            ),
+            contentPadding: const EdgeInsets.fromLTRB(24, 16, 24, 0),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  
+                  if (_emergencyContacts.isEmpty)
+                  
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 24.0),
+                      child: Column(
+                        children: [
+                          Icon(Icons.person_add_disabled_rounded, size: 64, color: colorScheme.outlineVariant.withOpacity(0.5)),
+                          const SizedBox(height: 16),
+                          Text(
+                            _isMalay ? "Belum ada kenalan" : "No contacts added yet",
+                            style: TextStyle(color: colorScheme.onSurfaceVariant, fontWeight: FontWeight.bold, fontSize: 16),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            _isMalay ? "Sila tambah sekurang-kurangnya satu." : "Please add at least one contact.",
+                            style: TextStyle(color: colorScheme.outline, fontSize: 13),
+                          ),
+                        ],
+                      ),
+                    )
+                  else
+                  
+                    ..._emergencyContacts.asMap().entries.map((entry) {
+                      int index = entry.key;
+                      Map<String, String> contact = entry.value;
+                      
+                      String initial = contact["name"]!.isNotEmpty ? contact["name"]!.substring(0, 1).toUpperCase() : "?";
+
+                      return Container(
+                        margin: const EdgeInsets.only(bottom: 12),
+                        decoration: BoxDecoration(
+                          color: colorScheme.surfaceContainerHighest.withOpacity(0.3),
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(color: colorScheme.outlineVariant.withOpacity(0.5)),
+                        ),
+                        child: ListTile(
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                          leading: CircleAvatar(
+                            backgroundColor: colorScheme.primaryContainer,
+                            foregroundColor: colorScheme.onPrimaryContainer,
+                            child: Text(initial, style: const TextStyle(fontWeight: FontWeight.bold)),
+                          ),
+                          title: Text(contact["name"] ?? "", style: const TextStyle(fontWeight: FontWeight.bold)),
+                          subtitle: Text(contact["phone"] ?? ""),
+                          trailing: IconButton(
+                            icon: Icon(Icons.remove_circle_outline, color: colorScheme.error),
+                            onPressed: () {
+                              setDialogState(() {
+                                _emergencyContacts.removeAt(index);
+                              });
+                            },
+                          ),
+                        ),
+                      );
+                    }).toList(),
+
+                  const SizedBox(height: 8),
+
+                  
+                  Row(
+                    children: [
+                      Expanded(child: Divider(color: colorScheme.outlineVariant.withOpacity(0.5))),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 12.0),
+                        child: Text(
+                          "${_emergencyContacts.length} / 3",
+                          style: TextStyle(color: colorScheme.primary, fontSize: 13, fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                      Expanded(child: Divider(color: colorScheme.outlineVariant.withOpacity(0.5))),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+
+                  
+                  if (_emergencyContacts.length < 3) ...[
+                    TextField(
+                      controller: nameCtrl,
+                      textInputAction: TextInputAction.next,
+                      decoration: InputDecoration(
+                        labelText: _isMalay ? "Nama" : "Name",
+                        hintText: _isMalay ? "cth: Ibu / Ayah" : "e.g. Mom / Dad",
+                        prefixIcon: const Icon(Icons.person_outline),
+                        filled: true,
+                        fillColor: colorScheme.surfaceContainerHighest.withOpacity(0.3),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(16),
+                          borderSide: BorderSide.none,
+                        ),
+                        isDense: true,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: phoneCtrl,
+                      keyboardType: TextInputType.phone,
+                      decoration: InputDecoration(
+                        labelText: _isMalay ? "Nombor Telefon" : "Phone Number",
+                        prefixIcon: const Icon(Icons.phone_outlined),
+                        filled: true,
+                        fillColor: colorScheme.surfaceContainerHighest.withOpacity(0.3),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(16),
+                          borderSide: BorderSide.none,
+                        ),
+                        isDense: true,
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    SizedBox(
+                      width: double.infinity,
+                      height: 50,
+                      child: ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: colorScheme.primaryContainer,
+                          foregroundColor: colorScheme.onPrimaryContainer,
+                          elevation: 0,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                        ),
+                        onPressed: () {
+                          if (nameCtrl.text.trim().isNotEmpty && phoneCtrl.text.trim().isNotEmpty) {
+                            setDialogState(() {
+                              _emergencyContacts.add({
+                                "name": nameCtrl.text.trim(),
+                                "phone": phoneCtrl.text.trim(),
+                              });
+                              nameCtrl.clear();
+                              phoneCtrl.clear();
+                            });
+                          }
+                        },
+                        icon: const Icon(Icons.add_circle_outline),
+                        label: Text(_isMalay ? "Tambah Kenalan" : "Add Contact", style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                      ),
+                    )
+                  ] else ...[
+                    
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: colorScheme.tertiaryContainer.withOpacity(0.6),
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(Icons.info_outline, color: colorScheme.onTertiaryContainer),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Text(
+                              _isMalay ? "Anda telah mencapai had maksimum 3 kenalan." : "You have reached the maximum limit of 3 contacts.",
+                              style: TextStyle(color: colorScheme.onTertiaryContainer, fontSize: 14, height: 1.3),
+                            ),
+                          ),
+                        ],
+                      ),
+                    )
+                  ],
+                ],
+              ),
+            ),
+            actionsPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            actions: [
+              FilledButton(
+                style: FilledButton.styleFrom(
+                    minimumSize: const Size(100, 45),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))
+                ),
+                onPressed: () {
+                  setState(() {}); 
+                  Navigator.pop(context);
+                },
+                child: Text(_isMalay ? "Selesai" : "Done", style: const TextStyle(fontWeight: FontWeight.bold)),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  void _showDeafCommunicationCard() {
+    showDialog(
+      context: context,
+      builder: (context) => Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        child: Container(
+          padding: const EdgeInsets.all(32),
+          decoration: BoxDecoration(
+            color: Theme.of(context).colorScheme.secondaryContainer,
+            borderRadius: BorderRadius.circular(24),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.hearing_disabled, size: 80, color: Theme.of(context).colorScheme.onSecondaryContainer),
+              const SizedBox(height: 24),
+              Text(
+                _isMalay ? "SAYA PEKAK\n/ KURANG PENDENGARAN" : "I AM DEAF\n/ HARD OF HEARING",
+                textAlign: TextAlign.center,
+                style: const TextStyle(fontSize: 26, fontWeight: FontWeight.w900, height: 1.2),
+              ),
+              const SizedBox(height: 20),
+              Text(
+                _isMalay
+                    ? "Tolong berkomunikasi dengan saya melalui teks, isyarat tangan, atau menaip di telefon anda."
+                    : "Please communicate dengan me using text, simple gestures, or by typing on your phone.",
+                textAlign: TextAlign.center,
+                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w500),
+              ),
+              const SizedBox(height: 32),
+              SizedBox(
+                width: double.infinity,
+                height: 50,
+                child: FilledButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: Text(_isMalay ? "Tutup" : "Close", style: const TextStyle(fontSize: 18)),
+                ),
+              )
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showMedicalCard() {
+    showDialog(
+      context: context,
+      builder: (context) => Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        child: Container(
+          padding: const EdgeInsets.all(32),
+          decoration: BoxDecoration(
+            color: Theme.of(context).colorScheme.errorContainer,
+            borderRadius: BorderRadius.circular(24),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.local_hospital, size: 80, color: Theme.of(context).colorScheme.error),
+              const SizedBox(height: 24),
+              Text(
+                _isMalay ? "KECEMASAN\nPERUBATAN" : "MEDICAL\nEMERGENCY",
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 28, fontWeight: FontWeight.w900, height: 1.2, color: Theme.of(context).colorScheme.error),
+              ),
+              const SizedBox(height: 20),
+              Text(
+                _isMalay
+                    ? "Saya memerlukan bantuan perubatan segera. Tolong hubungi ambulans (999) untuk saya."
+                    : "I need immediate medical assistance. Please help me call an ambulance (999).",
+                textAlign: TextAlign.center,
+                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 32),
+              SizedBox(
+                width: double.infinity,
+                height: 50,
+                child: FilledButton(
+                  style: FilledButton.styleFrom(backgroundColor: Theme.of(context).colorScheme.error),
+                  onPressed: () => Navigator.pop(context),
+                  child: Text(_isMalay ? "Tutup" : "Close", style: const TextStyle(fontSize: 18, color: Colors.white)),
+                ),
+              )
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
     return Scaffold(
-      appBar: AppBar(title: const Text('Emergency')),
-      body: Center(
+      backgroundColor: colorScheme.surface,
+      appBar: AppBar(
+        title: Text(
+            _isMalay ? 'Sokongan Kecemasan' : 'Emergency Support',
+            style: const TextStyle(fontWeight: FontWeight.bold)
+        ),
+        centerTitle: true,
+        actions: [
+          IconButton(
+            icon: Icon(Icons.settings, color: colorScheme.primary),
+            onPressed: _showSettingsDialog,
+          ),
+          TextButton(
+            onPressed: () {
+              setState(() {
+                _isMalay = !_isMalay;
+              });
+            },
+            child: Text(
+                _isMalay ? "EN" : "MS",
+                style: TextStyle(color: colorScheme.primary, fontWeight: FontWeight.bold, fontSize: 16)
+            ),
+          ),
+          const SizedBox(width: 8),
+        ],
+      ),
+      body: Stack(
+        children: [
+          _buildMainContent(context, colorScheme),
+          if (_isSOSActive)
+            _buildEmergencyOverlay(colorScheme),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMainContent(BuildContext context, ColorScheme colorScheme) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(20.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildLocationCard(context, colorScheme),
+          const SizedBox(height: 30),
+          Center(
+            child: Column(
+              children: [
+                _buildSOSButton(colorScheme),
+                const SizedBox(height: 16),
+                Text(
+                    _isMalay ? "Tahan selama 3 saat untuk SOS" : "Hold for 3 seconds to trigger SOS",
+                    style: TextStyle(color: colorScheme.outline, fontSize: 13)
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 40),
+          Text(
+              _isMalay ? "Kad Bantuan Pantas" : "Quick Help Cards",
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: colorScheme.onSurface)
+          ),
+          const SizedBox(height: 12),
+          _buildHelpCard(
+            context,
+            icon: Icons.record_voice_over,
+            title: "I am Deaf / Hard of Hearing",
+            subtitle: "Saya Pekak / Kurang Pendengaran",
+            color: colorScheme.secondaryContainer,
+            onTap: _showDeafCommunicationCard,
+          ),
+          const SizedBox(height: 12),
+          _buildHelpCard(
+            context,
+            icon: Icons.local_hospital,
+            title: "Medical Emergency",
+            subtitle: "Kecemasan Perubatan",
+            color: colorScheme.tertiaryContainer,
+            onTap: _showMedicalCard,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEmergencyOverlay(ColorScheme colorScheme) {
+    return Container(
+      color: Colors.red.withOpacity(0.96),
+      width: double.infinity,
+      height: double.infinity,
+      child: SafeArea(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.emergency, size: 80,
-                color: Theme.of(context).colorScheme.outline),
-            const SizedBox(height: 16),
-            Text('Emergency Assistant',
-                style: Theme.of(context).textTheme.headlineSmall),
-            const SizedBox(height: 8),
-            Text('Student 4 - Replace this placeholder',
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: Theme.of(context).colorScheme.outline)),
+            const Icon(Icons.warning_amber_rounded, size: 120, color: Colors.white),
+            const SizedBox(height: 30),
+            Text(
+              _isMalay ? "SOS AKTIF" : "SOS ACTIVE",
+              style: const TextStyle(color: Colors.white, fontSize: 36, fontWeight: FontWeight.w900),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              _sosStatus,
+              style: const TextStyle(color: Colors.white70, fontSize: 18),
+            ),
+            const Divider(color: Colors.white24, height: 60, indent: 50, endIndent: 50),
+            Text(
+              _isMalay ? "Lokasi Semasa:\n$_streetName\n$_latLong" : "Current Location:\n$_streetName\n$_latLong",
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: Colors.white, fontSize: 16),
+            ),
+            const Spacer(),
+            Padding(
+              padding: const EdgeInsets.only(bottom: 50),
+              child: ElevatedButton.icon(
+                onPressed: _stopSOS,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.white,
+                  foregroundColor: Colors.red,
+                  minimumSize: const Size(250, 70),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(35)),
+                ),
+                icon: const Icon(Icons.stop_circle, size: 30),
+                label: Text(
+                  _isMalay ? "HENTIKAN SOS" : "STOP SOS",
+                  style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+                ),
+              ),
+            ),
           ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLocationCard(BuildContext context, ColorScheme colorScheme) {
+    return GestureDetector(
+      onTap: () async {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(_isMalay ? "Mengemas kini lokasi..." : "Updating location...")),
+        );
+        await _autoFetchLocation();
+      },
+      child: Container(
+        width: double.infinity,
+        height: 140,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(28),
+          gradient: LinearGradient(
+            colors: [
+              colorScheme.primaryContainer,
+              colorScheme.primaryContainer.withOpacity(0.4),
+            ],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          boxShadow: [
+            BoxShadow(color: colorScheme.primary.withOpacity(0.05), blurRadius: 15, offset: const Offset(0, 5))
+          ],
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Row(
+            children: [
+              CircleAvatar(
+                radius: 24,
+                backgroundColor: colorScheme.primary,
+                child: _isLoadingGPS
+                    ? const CircularProgressIndicator(color: Colors.white, strokeWidth: 2)
+                    : const Icon(Icons.my_location, color: Colors.white, size: 24),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
+                      _isMalay ? "Lokasi Tepat" : "Precise Location",
+                      style: TextStyle(color: colorScheme.primary, fontWeight: FontWeight.bold, fontSize: 13),
+                    ),
+                    Text(
+                      _streetName,
+                      style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, letterSpacing: -0.5),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    Text(
+                      "$_cityCountry\n$_latLong",
+                      style: TextStyle(fontSize: 12, color: colorScheme.onSurfaceVariant),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(Icons.refresh, color: colorScheme.primary.withOpacity(0.2), size: 20),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSOSButton(ColorScheme colorScheme) {
+    return GestureDetector(
+      onLongPress: _triggerSOS,
+      child: Container(
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: colorScheme.errorContainer.withOpacity(0.2),
+        ),
+        child: Container(
+          width: 160,
+          height: 160,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            gradient: LinearGradient(
+              colors: [colorScheme.error, const Color(0xFFFF5252)],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+            boxShadow: [
+              BoxShadow(color: colorScheme.error.withOpacity(0.4), blurRadius: 20, spreadRadius: 5, offset: const Offset(0, 10))
+            ],
+          ),
+          child: const Center(
+            child: Text("SOS", style: TextStyle(color: Colors.white, fontSize: 32, fontWeight: FontWeight.w900)),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHelpCard(BuildContext context, {
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required Color color,
+    required VoidCallback onTap,
+  }) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(20),
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: color,
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Row(
+            children: [
+              Icon(icon, size: 30),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                    Text(subtitle, style: TextStyle(fontSize: 14, color: Colors.black.withOpacity(0.6))),
+                  ],
+                ),
+              ),
+              const Icon(Icons.chevron_right),
+            ],
+          ),
         ),
       ),
     );

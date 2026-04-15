@@ -1,11 +1,11 @@
-name: signvoyage_001
+name: practice
 description: "A new Flutter project."
 publish_to: 'none'
 
 version: 1.0.0+1
 
 environment:
-  sdk: ^3.11.1
+  sdk: ^3.11.4
 
 dependencies:
   flutter:
@@ -20,6 +20,16 @@ dependencies:
   permission_handler: ^11.3.1
   device_info_plus: ^13.0.0
   tflite_flutter: ^0.12.1
+  geolocator: ^14.0.2
+  geocoding: ^4.0.0
+  flutter_local_notifications: ^21.0.0
+  vibration: ^3.1.8
+  url_launcher: ^6.3.2
+  sqflite: ^2.4.2
+  path_provider: ^2.1.5
+  path: ^1.9.1
+  video_player: ^2.11.1
+  sqflite_common_ffi: ^2.4.0+2
 
 dev_dependencies:
   flutter_test:
@@ -30,3 +40,5 @@ dev_dependencies:
 flutter:
   uses-material-design: true
 
+  assets:
+    - assets/videos/
