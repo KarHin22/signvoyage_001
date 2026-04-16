@@ -1,6 +1,6 @@
 {
-    "name": "signvoyage_001",
-    "short_name": "signvoyage_001",
+    "name": "practice",
+    "short_name": "practice",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",
