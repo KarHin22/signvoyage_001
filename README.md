@@ -1,33 +1,76 @@
-# signvoyage_001
+# 👋 SignVoyage 
 
-A Flutter mobile application project for the 2026A PROG2033 Mobile Application Development course.
+**SignVoyage** is a cross-platform mobile application designed to bridge communication gaps and promote inclusivity through sign language integration. Developed as a major group project for the **2026A PROG2033 Mobile Application Development** course.
 
-## Overview
+This application is built with a direct focus on **Sustainable Development Goal 10 (SDG 10) - Reduced Inequalities**, aiming to empower the deaf and hard-of-hearing community and make global travel and daily interactions more accessible to everyone.
 
-`signvoyage_001` is a group project demonstrating a mobile app built with Flutter. It includes features such as multimedia handling, device services, and cross-platform support for Android, iOS, web, and desktop.
+---
 
-## Getting Started
+## 🌟 Key Features
 
-1. Install Flutter: https://flutter.dev/docs/get-started/install
-2. Open the project in VS Code or Android Studio.
-3. Run `flutter pub get` to fetch dependencies.
-4. Start the app with `flutter run`.
-5. Choose your emulator or device:
-   - **Android Emulator**: Managed via Android Studio AVD Manager. Requires Intel HAXM or AMD-V virtualization.
-   - **iOS Simulator**: macOS only, launched via Xcode or command line.
-   - **Physical Device**: Connect via USB with USB debugging enabled (Android) or Xcode provisioning (iOS).
+* 📖 **Travel Dictionary (Offline Support):** A deeply integrated offline dictionary system featuring real-time search, category filtering (Basics, Transport, Needs, Support), and multi-video playback demonstrations of common functional sign language phases.
+* 🗣️ **Voice Chat & Communication:** Integration with Speech-to-Text (`speech_to_text`) allowing fluid communication bridges between verbal and visual individuals.
+* 📹 **Sign Translator:** (In-development) Real-time parsing or demonstrations of sign languages.
+* 🚑 **Emergency Module:** Quick-access tools specifically designed for user safety and barrier-free functional communication.
 
-## Project Structure
+## 🛠️ Tech Stack & Architecture
 
-- `lib/` - main application code
-- `android/`, `ios/`, `web/`, `linux/`, `macos/`, `windows/` - platform-specific folders
-- `assets/` - static resources such as videos
-- `test/` - widget and unit tests
+This project is built using modern Flutter development standards:
+* **Framework:** Flutter (`^3.11.1`)
+* **State Management:** Riverpod (`flutter_riverpod`)
+* **Local Storage & DB:** SQLite (`sqflite`, `sqflite_common_ffi` for desktop testing support)
+* **Media Rendering:** Video Player (`video_player` with dynamic modal scaling)
 
-## Contributors
+## 📁 Project Structure
 
-- Ivan, Joel ,Kar Hin, Sei Jie
+The codebase is highly modular and strictly follows feature-first organization rules:
 
-## Notes
+```text
+lib/
+├── features/
+│   ├── dictionary/      # Offline SQLite vocab DB, Search & Video Modals
+│   ├── emergency/       # Emergency contact and functional features
+│   ├── sign_translator/ # Translator UI & logic
+│   └── voice_chat/      # Speech-to-text integration 
+├── main.dart            # Application Entry Point
+```
 
-This repository is under active development as part of the PROG2033 course.
+*Static assets like the database seed videos (`.mp4` files) are housed in `assets/videos/` and are tightly coupled at runtime.*
+
+## 🚀 Getting Started
+
+If you are cloning this repository to run it locally, please follow these steps:
+
+### Prerequisites
+* Flutter SDK (3.11+) installed on your machine.
+* Android Studio / Xcode configured for emulation.
+* (Optional) **Desktop Support:** Developer Mode enabled for Windows environments (Required to test sqflite locally).
+
+### Installation
+1. Clone the repository and navigate to the project directory:
+   ```bash
+   git clone <repository_url>
+   cd signvoyage_001
+   ```
+2. Fetch the latest packages and dependencies:
+   ```bash
+   flutter pub get
+   ```
+3. Run the application!
+   ```bash
+   flutter run
+   ```
+
+*Note: For the Dictionary module to work, ensure the demonstration `.mp4` files are actively populated inside your `assets/videos/` directory path.*
+
+---
+
+## 👥 Contributors
+
+This mobile application is actively developed by:
+* **Ivan**
+* **Joel** 
+* **Kar Hin** 
+* **Sei Jie**
+
+> *"Bridging the world, one sign at a time."*
